@@ -40,7 +40,7 @@ async def fetch_pending_reviews(ctx: Context) -> str:
     Use this tool to see what needs captions and hashtags today.
     """
     if not authenticate_session(ctx):
-        return "❌ SECURITY ERROR: Unauthorized access. The security passkey is invalid."
+        return "SECURITY ERROR: Unauthorized access. The security passkey is invalid."
         
     conn = get_db_connection()
     cur = conn.cursor()
@@ -56,24 +56,24 @@ async def fetch_pending_reviews(ctx: Context) -> str:
         rows = cur.fetchall()
         
         if not rows:
-            return "🎉 The review queue is perfectly clear! There are no posts waiting for human approval."
+            return "The review queue is perfectly clear. There are no posts waiting for human approval."
             
-        output = "📋 MARKETING ENTRIES AWAITING HUMAN INTERVENTION:\n" + "="*50 + "\n"
+        output = "MARKETING ENTRIES AWAITING HUMAN INTERVENTION:\n" + "="*50 + "\n"
         for row in rows:
-            output += f"🔹 [POST ID: {row[0]}]\n"
-            output += f"   • Layout Type: {row[2] if row[2] else 'Not Specified'}\n"
-            output += f"   • Cloud Media Resource: {row[1]}\n"
+            output += f"POST ID: {row[0]}\n"
+            output += f"   - Layout Type: {row[2] if row[2] else 'Not Specified'}\n"
+            output += f"   - Cloud Media Resource: {row[1]}\n"
             output += "-"*50 + "\n"
             
         return output
     except Exception as e:
-        return f"❌ Database Communication Failure: {str(e)}"
+        return f"Database Communication Failure: {str(e)}"
     finally:
         cur.close()
         conn.close()
 
 # =====================================================================
-# TOOL 2: THE HUMAN GATEKEEPER (Handles full metadata or blank payloads)
+# TOOL 2: THE HUMAN GATEKEEPER
 # =====================================================================
 @mcp.tool()
 async def commit_human_approved_post(
@@ -89,7 +89,7 @@ async def commit_human_approved_post(
     You can leave the caption, hashtags, and post_type empty if the human wants a raw media post.
     """
     if not authenticate_session(ctx):
-        return "❌ SECURITY ERROR: Unauthorized access. The security passkey is invalid."
+        return "SECURITY ERROR: Unauthorized access. The security passkey is invalid."
         
     conn = get_db_connection()
     cur = conn.cursor()
@@ -98,9 +98,9 @@ async def commit_human_approved_post(
         record = cur.fetchone()
         
         if not record:
-            return f"❌ Execution Aborted: Post ID {post_id} does not exist."
+            return f"Execution Aborted: Post ID {post_id} does not exist."
         if record[0] != 'AWAITING_REVIEW':
-            return f"❌ Execution Aborted: Post ID {post_id} is in a '{record[0]}' state, not 'AWAITING_REVIEW'."
+            return f"Execution Aborted: Post ID {post_id} is in a '{record[0]}' state, not 'AWAITING_REVIEW'."
 
         # Overwrite content text strings while pushing status instantly to READY
         cur.execute(
@@ -116,11 +116,11 @@ async def commit_human_approved_post(
             (final_caption, final_hashtags, final_post_type, post_id)
         )
         conn.commit()
-        return f"✅ SUCCESS: Post ID {post_id} is marked 'READY'. The cloud cron will deploy the media URL."
+        return f"SUCCESS: Post ID {post_id} is marked 'READY'. The cloud cron will deploy the media URL."
         
     except Exception as e:
         conn.rollback()
-        return f"❌ Transaction Error: State update rolled back -> {str(e)}"
+        return f"Transaction Error: State update rolled back -> {str(e)}"
     finally:
         cur.close()
         conn.close()
