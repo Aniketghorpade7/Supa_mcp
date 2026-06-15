@@ -2,7 +2,7 @@ import os
 import sys
 import psycopg2
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.static import StaticTokenVerifier
+from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 
 # Extract tokens from Render environment variables
 SERVER_AUTH_TOKEN = os.environ.get("MCP_SECRET_PASSKEY")
@@ -12,11 +12,19 @@ if not SERVER_AUTH_TOKEN or not SUPABASE_DB_URL:
     print("CRITICAL CONFIGURATION ERROR: Missing environment variables!", file=sys.stderr)
     sys.exit(1)
 
-# Pass the secret token straight into FastMCP's built-in verifier
-auth_verifier = StaticTokenVerifier(token=SERVER_AUTH_TOKEN)
+# Configure the token authorization scopes expected by FastMCP v3
+verifier = StaticTokenVerifier(
+    tokens={
+        SERVER_AUTH_TOKEN: {
+            "client_id": "primary_user",
+            "scopes": ["marketing:write", "marketing:read"]
+        }
+    },
+    required_scopes=["marketing:write"]
+)
 
-# FIX: Removed 'title' and 'description' keyword arguments to match FastMCP's production API
-mcp = FastMCP("Agency Marketing Gateway", auth=auth_verifier)
+# Launch FastMCP utilizing the secure token verifier mapping
+mcp = FastMCP("Agency Marketing Gateway", auth=verifier)
 
 def get_db_connection():
     """Establishes a connection to your Supabase PostgreSQL cluster."""
