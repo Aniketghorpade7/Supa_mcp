@@ -1,9 +1,9 @@
 import os
 import sys
 import psycopg2
-from fastmcp import FastMCP
+from fastmcp import FastMCP, Context
 
-# Extract your database credentials from Render environment variables
+# Extract parameters from your Render panel
 SUPABASE_DB_URL = os.environ.get("SUPABASE_DATABASE_URL")
 SERVER_AUTH_TOKEN = os.environ.get("MCP_SECRET_PASSKEY")
 
@@ -11,24 +11,26 @@ if not SUPABASE_DB_URL or not SERVER_AUTH_TOKEN:
     print("CRITICAL CONFIGURATION ERROR: Missing environment variables!", file=sys.stderr)
     sys.exit(1)
 
-# Initialize FastMCP cleanly with zero strict transport-level auth blocking
 mcp = FastMCP("Agency Marketing Gateway")
 
 def get_db_connection():
     """Establishes a connection to your Supabase PostgreSQL cluster."""
     return psycopg2.connect(SUPABASE_DB_URL)
 
+def verify_url_token(ctx: Context) -> bool:
+    """Extracts and verifies the secret token from the URL query string parameters."""
+    query_params = ctx.request.url.query_params if hasattr(ctx.request, "url") else {}
+    provided_token = query_params.get("token")
+    return provided_token == SERVER_AUTH_TOKEN
+
 # =====================================================================
-# TOOL 1: THE QUEUE QUERY (Protected by Passkey Verification)
+# TOOL 1: THE QUEUE QUERY
 # =====================================================================
 @mcp.tool()
-async def fetch_pending_reviews(security_passkey: str) -> str:
-    """
-    Fetches a list of all raw marketing entries currently waiting for review.
-    You must provide the user's explicit security_passkey parameter to authorize the database query.
-    """
-    if security_passkey != SERVER_AUTH_TOKEN:
-        return "❌ SECURITY ERROR: Unauthorized access. The provided security passkey is invalid."
+async def fetch_pending_reviews(ctx: Context) -> str:
+    """Fetches a list of all raw marketing entries currently waiting for review."""
+    if not verify_url_token(ctx):
+        return "SECURITY ERROR: Unauthorized access. The URL path token is missing or invalid."
 
     conn = get_db_connection()
     cur = conn.cursor()
@@ -43,38 +45,35 @@ async def fetch_pending_reviews(security_passkey: str) -> str:
         )
         rows = cur.fetchall()
         if not rows:
-            return "🎉 The review queue is clear! No posts are waiting for human approval."
+            return "The review queue is clear. No posts are waiting for human approval."
             
-        output = "📋 MARKETING ENTRIES AWAITING HUMAN INTERVENTION:\n" + "="*50 + "\n"
+        output = "MARKETING ENTRIES AWAITING HUMAN INTERVENTION:\n" + "="*50 + "\n"
         for row in rows:
-            output += f"🔹 [POST ID: {row[0]}]\n"
+            output += f" [POST ID: {row[0]}]\n"
             output += f"   • Layout Type: {row[2] if row[2] else 'Not Specified'}\n"
             output += f"   • Cloud Media Resource: {row[1]}\n"
             output += "-"*50 + "\n"
         return output
     except Exception as e:
-        return f"❌ Database Failure: {str(e)}"
+        return f"Database Failure: {str(e)}"
     finally:
         cur.close()
         conn.close()
 
 # =====================================================================
-# TOOL 2: THE HUMAN GATEKEEPER (Protected by Passkey Verification)
+# TOOL 2: THE HUMAN GATEKEEPER
 # =====================================================================
 @mcp.tool()
 async def commit_human_approved_post(
     post_id: int, 
-    security_passkey: str,
+    ctx: Context,
     final_caption: str = None,   
     final_hashtags: str = None,  
     final_post_type: str = None  
 ) -> str:
-    """
-    Saves the verified metadata and marks the post as READY.
-    You must provide the user's explicit security_passkey parameter to authorize this update action.
-    """
-    if security_passkey != SERVER_AUTH_TOKEN:
-        return "❌ SECURITY ERROR: Unauthorized access. The provided security passkey is invalid."
+    """Saves verified metadata and marks the post as READY if authorized by the user."""
+    if not verify_url_token(ctx):
+        return "SECURITY ERROR: Unauthorized access. The URL path token is missing or invalid."
 
     conn = get_db_connection()
     cur = conn.cursor()
@@ -83,9 +82,9 @@ async def commit_human_approved_post(
         record = cur.fetchone()
         
         if not record:
-            return f"❌ Execution Aborted: Post ID {post_id} does not exist."
+            return f"Execution Aborted: Post ID {post_id} does not exist."
         if record[0] != 'AWAITING_REVIEW':
-            return f"❌ Execution Aborted: Post ID {post_id} is in a '{record[0]}' state, not 'AWAITING_REVIEW'."
+            return f"Execution Aborted: Post ID {post_id} is in a '{record[0]}' state, not 'AWAITING_REVIEW'."
 
         cur.execute(
             """
@@ -100,10 +99,10 @@ async def commit_human_approved_post(
             (final_caption, final_hashtags, final_post_type, post_id)
         )
         conn.commit()
-        return f"✅ SUCCESS: Post ID {post_id} is marked 'READY'."
+        return f"SUCCESS: Post ID {post_id} is marked 'READY'."
     except Exception as e:
         conn.rollback()
-        return f"❌ Transaction Error: State update rolled back -> {str(e)}"
+        return f"Transaction Error: State update rolled back -> {str(e)}"
     finally:
         cur.close()
         conn.close()
