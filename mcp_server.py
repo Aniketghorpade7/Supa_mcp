@@ -2,40 +2,34 @@ import os
 import sys
 import psycopg2
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 
-# Extract tokens from Render environment variables
-SERVER_AUTH_TOKEN = os.environ.get("MCP_SECRET_PASSKEY")
+# Extract your database credentials from Render environment variables
 SUPABASE_DB_URL = os.environ.get("SUPABASE_DATABASE_URL")
+SERVER_AUTH_TOKEN = os.environ.get("MCP_SECRET_PASSKEY")
 
-if not SERVER_AUTH_TOKEN or not SUPABASE_DB_URL:
+if not SUPABASE_DB_URL or not SERVER_AUTH_TOKEN:
     print("CRITICAL CONFIGURATION ERROR: Missing environment variables!", file=sys.stderr)
     sys.exit(1)
 
-# Configure the token authorization scopes expected by FastMCP v3
-verifier = StaticTokenVerifier(
-    tokens={
-        SERVER_AUTH_TOKEN: {
-            "client_id": "primary_user",
-            "scopes": ["marketing:write", "marketing:read"]
-        }
-    },
-    required_scopes=["marketing:write"]
-)
-
-# Launch FastMCP utilizing the secure token verifier mapping
-mcp = FastMCP("Agency Marketing Gateway", auth=verifier)
+# Initialize FastMCP cleanly with zero strict transport-level auth blocking
+mcp = FastMCP("Agency Marketing Gateway")
 
 def get_db_connection():
     """Establishes a connection to your Supabase PostgreSQL cluster."""
     return psycopg2.connect(SUPABASE_DB_URL)
 
 # =====================================================================
-# TOOL 1: THE QUEUE QUERY (Locked to AWAITING_REVIEW status)
+# TOOL 1: THE QUEUE QUERY (Protected by Passkey Verification)
 # =====================================================================
 @mcp.tool()
-async def fetch_pending_reviews() -> str:
-    """Fetches a list of all raw marketing entries currently waiting for review."""
+async def fetch_pending_reviews(security_passkey: str) -> str:
+    """
+    Fetches a list of all raw marketing entries currently waiting for review.
+    You must provide the user's explicit security_passkey parameter to authorize the database query.
+    """
+    if security_passkey != SERVER_AUTH_TOKEN:
+        return "❌ SECURITY ERROR: Unauthorized access. The provided security passkey is invalid."
+
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -65,19 +59,23 @@ async def fetch_pending_reviews() -> str:
         conn.close()
 
 # =====================================================================
-# TOOL 2: THE HUMAN GATEKEEPER (Allows full payloads or blank fields)
+# TOOL 2: THE HUMAN GATEKEEPER (Protected by Passkey Verification)
 # =====================================================================
 @mcp.tool()
 async def commit_human_approved_post(
     post_id: int, 
+    security_passkey: str,
     final_caption: str = None,   
     final_hashtags: str = None,  
     final_post_type: str = None  
 ) -> str:
     """
     Saves the verified metadata and marks the post as READY.
-    CRITICAL RULE: Only execute this tool if the human explicitly instructs you to do so.
+    You must provide the user's explicit security_passkey parameter to authorize this update action.
     """
+    if security_passkey != SERVER_AUTH_TOKEN:
+        return "❌ SECURITY ERROR: Unauthorized access. The provided security passkey is invalid."
+
     conn = get_db_connection()
     cur = conn.cursor()
     try:
