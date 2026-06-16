@@ -1,9 +1,8 @@
 import os
 import sys
 import psycopg2
-from fastmcp import FastMCP, Context
+from fastmcp import FastMCP
 
-# Extract parameters from your Render panel
 SUPABASE_DB_URL = os.environ.get("SUPABASE_DATABASE_URL")
 SERVER_AUTH_TOKEN = os.environ.get("MCP_SECRET_PASSKEY")
 
@@ -17,21 +16,14 @@ def get_db_connection():
     """Establishes a connection to your Supabase PostgreSQL cluster."""
     return psycopg2.connect(SUPABASE_DB_URL)
 
-def verify_url_token(ctx: Context) -> bool:
-    """Extracts and verifies the secret token from the URL query string parameters."""
-    query_params = ctx.request.url.query_params if hasattr(ctx.request, "url") else {}
-    provided_token = query_params.get("token")
-    return provided_token == SERVER_AUTH_TOKEN
-
 # =====================================================================
-# TOOL 1: THE QUEUE QUERY
+# TOOL 1: THE QUEUE QUERY (Simplified descriptions)
 # =====================================================================
 @mcp.tool()
-async def fetch_pending_reviews(ctx: Context) -> str:
-    """Fetches a list of all raw marketing entries currently waiting for review."""
-    if not verify_url_token(ctx):
-        return "SECURITY ERROR: Unauthorized access. The URL path token is missing or invalid."
-
+async def fetch_pending_reviews() -> str:
+    """
+    Retrieves entries from the database that are waiting for human content review.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -61,20 +53,18 @@ async def fetch_pending_reviews(ctx: Context) -> str:
         conn.close()
 
 # =====================================================================
-# TOOL 2: THE HUMAN GATEKEEPER
+# TOOL 2: THE HUMAN GATEKEEPER (Simplified descriptions)
 # =====================================================================
 @mcp.tool()
 async def commit_human_approved_post(
     post_id: int, 
-    ctx: Context,
     final_caption: str = None,   
     final_hashtags: str = None,  
     final_post_type: str = None  
 ) -> str:
-    """Saves verified metadata and marks the post as READY if authorized by the user."""
-    if not verify_url_token(ctx):
-        return "SECURITY ERROR: Unauthorized access. The URL path token is missing or invalid."
-
+    """
+    Updates the status of a specific post ID to READY.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
